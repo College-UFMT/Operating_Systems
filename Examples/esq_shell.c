@@ -4,12 +4,9 @@
 #include <stdlib.h>
 #include <sys/wait.h>
 
-#define MAX_ARGS 15
-
-
 int main()
 {
-      //processo pai cria um pipe()
+  //processo pai cria um pipe()
   int fd[2];
   if (pipe(fd) < 0)
   {
@@ -48,7 +45,7 @@ int main()
     {                 //filho 2
       close(fd[1]);   //fecha o descritor de escrita do pipe
       dup2(fd[0], 0); //redireciona a entrada padrao para o pipe
-      if (execl("/bin/grep", "grep", "Mai", NULL) < 0)
+      if (execl("/bin/grep", "grep", "Mar", NULL) < 0)
       {
         printf("\nErro exec() processo 2");
         exit(0);
@@ -59,12 +56,12 @@ int main()
       close(fd[0]);
       close(fd[1]);
       int status;
-      for (int i = 0; i < 2; i++)
+      for (int i = 0; i < 15; i++)
       {
         wait(&status);
       }
     }
   }
- 
+  sleep(30.0);
   return 0;
 }

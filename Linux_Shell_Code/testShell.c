@@ -4,132 +4,304 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/wait.h>
+#include <curses.h>
 
-#define MAX_LINE 80
+#include "Hist.c"
 
-typedef struct lsComandos
+#define MAXLINE 1024
+#define MAXPARAM 100
+
+
+char *readLine(char *buffer)
 {
-	char param[50];
-	struct lsComandos *prox;
-} lsComandos;
+	int y, x, ch;
 
-typedef lsComandos *lista;
+	int index = 0, count = 0, exit = 1;
+	char aux[MAXLINE];
 
-void inicializa(lista *ls)
-{
-	for(int i = 0; i < MAX_LINE; i++)
-		ls[i] = NULL;
-}
+	initscr();
+	//refresh();
+	getyx(stdscr, y, x);
+	keypad(stdscr, TRUE);
 
-lsComandos* aloca(char *param)
-{
-	lsComandos *novo = (lsComandos*) malloc(sizeof(lsComandos));
-	strcpy(novo->param, param);
-	novo->prox = NULL;
-	
-	return novo;
-}
-
-
-void insere(lista *ls, char *param, int indice)
-{
-		
-	lsComandos *p = ls[indice];
-	lsComandos *ant = NULL;
-	
-	while(p != NULL)
+	while(exit)
 	{
-		ant = p;
-		p = p->prox;
-	}
-
-	if(p)
-		return;
-	
-	
-	lsComandos *novo  = aloca(param);
-
-	if(!ant)
-		ls[indice] = novo;
-	else
-		ant->prox = novo;
-	puts(novo->param);
-
-}
-
-void separaArg(lista *ls, char *args, int indice)
-{
-	int j = 0;
-	
-	for(int i = 0; i < (int)strlen(args)-1; i++)
-	{
-		if(args[i+1] == ' ')
+		ch = getch();
+		switch (ch)
 		{
-			int tam = i-j+1;
-			char *param;
-			param = (char*) malloc(tam * sizeof(char));
-			strncpy(param, args + j, tam);
+			case KEY_UP:
+				index++;
+				break;
+			
+			case KEY_DOWN:
+				
+				index--;
+				break;
+			
+			case 10:
+				exit = 0;
+				break;
 
-			insere(ls,param,indice);
+			case KEY_BACKSPACE:
+				break;
 
-			j = i+2;
-			free(param);
-		}
+			default:
+				aux[count] = (char)ch;
+				count++;
+				break;
+		}	
 	}
-
+	move(y+1,0);
+	//printw("LineTest");
+	endwin();
+	buffer = (char *) malloc(count * sizeof(char));
+	strcpy(buffer,aux);
+	buffer[count] = NULL;
+	return buffer;
 }
 
-void imprime(lista *ls)
+int getInput(char *line)
 {
-	int i;
-	
-	for(i = 0; i < 20; i++)
-	{
-		printf("%d", i);
-		if(ls[i])
-		{
-			lsComandos *p = ls[i];
-			printf("\n");
-			while(p)
-			{
-				printf("\t%s\t%p\n", p->param, p->prox);
-				p = p->prox;
-			}
-		}
-		else
-			printf("\n\tNULL\n");
-		
+	char *buffer;
+
+	strcpy(line,readLine(buffer));
+	if (strlen(line) != 0) {
+	//add_history(buf);
+		puts(line);
+		return 0;
+	} else {
+		return 1;
 	}
 }
+
+void execArgs(char** parsed);
+void execArgsPiped(char** parsed, char** parsedpipe);
+int processString(char* str, char** parsed, char** parsedpipe);
+int parsePipe(char* str, char** strpiped);
+void parseSpace(char* str, char** parsed);
+int ownCmdHandler(char** parsed);
+void openHelp();
+
+
 
 int main(void)
 {
-	char args[MAX_LINE/2 + 1];  //Número máximo de argumentos
-	int executar = 1;  //flag para sair do programa 
-  
-  	lista *ls;
-  	inicializa(ls);
+	char args[MAXLINE];
+	char *parsedArgs[MAXPARAM];
+	char *parsedArgsPiped[MAXPARAM]; //Número máximo de argumentos
+	 //Número máximo de argumentos
+	int executar = 1;	
+	int execFlag = 0;		//flag para sair do programa
+
 	int indice = 0;
 
-  	while (executar)
+	while (1)
 	{
-		printf("shell>");
-  		fflush(stdout); //limpa o buffer de stdout
-  		
-  		fgets(args,MAX_LINE/2 + 1,stdin);
-		puts(args);
-		strcat(args," ");
-		
-    	separaArg(ls,args, indice);
-  		imprime(ls);
+		fflush(stdout);
+		if (getInput(args))
+			continue;
+		// process
+		execFlag = processString(args,
+		parsedArgs, parsedArgsPiped);
+		// execflag returns zero if there is no command
+		// or it is a builtin command,
+		// 1 if it is a simple command
+		// 2 if it is including a pipe.
 
-		indice++;
-	}	
-  return 0;	
+		// execute
+		if (execFlag == 1)
+			execArgs(parsedArgs);
+
+		if (execFlag == 2)
+			execArgsPiped(parsedArgs, parsedArgsPiped);
+	}
+	return 0;
 }
-	
-	
-	
-	
-	
-		
+
+
+int parsePipe(char* str, char** strpiped)
+{
+	int i;
+	for (i = 0; i < 2; i++) {
+		strpiped[i] = strsep(&str, "|");
+		if (strpiped[i] == NULL)
+			break;
+	}
+
+	if (strpiped[1] == NULL)
+		return 0; // returns zero if no pipe is found.
+	else {
+		return 1;
+	}
+}
+
+// function for parsing command words
+void parseSpace(char* str, char** parsed)
+{
+	int i;
+
+	for (i = 0; i < MAXPARAM; i++) {
+		parsed[i] = strsep(&str, " ");
+
+		if (parsed[i] == NULL)
+			break;
+		if (strlen(parsed[i]) == 0)
+			i--;
+	}
+}
+
+int processString(char* str, char** parsed, char** parsedpipe)
+{
+
+	char* strpiped[2];
+	int piped = 0;
+
+	piped = parsePipe(str, strpiped);
+
+	if (piped) {
+		parseSpace(strpiped[0], parsed);
+		parseSpace(strpiped[1], parsedpipe);
+
+	} else {
+
+		parseSpace(str, parsed);
+	}
+
+	if (ownCmdHandler(parsed))
+		return 0;
+	else
+		return 1 + piped;
+}
+
+void execArgsPiped(char** parsed, char** parsedpipe)
+{
+	// 0 is read end, 1 is write end
+	int pipefd[2];
+	pid_t p1, p2;
+
+	if (pipe(pipefd) < 0) {
+		printf("\nPipe could not be initialized");
+		return;
+	}
+	p1 = fork();
+	if (p1 < 0) {
+		printf("\nCould not fork");
+		return;
+	}
+
+	if (p1 == 0) {
+		// Child 1 executing..
+		// It only needs to write at the write end
+		close(pipefd[0]);
+		dup2(pipefd[1], STDOUT_FILENO);
+		close(pipefd[1]);
+
+		if (execvp(parsed[0], parsed) < 0) {
+			printf("\nCould not execute command 1..");
+			exit(0);
+		}
+	} else {
+		// Parent executing
+		p2 = fork();
+
+		if (p2 < 0) {
+			printf("\nCould not fork");
+			return;
+		}
+
+		// Child 2 executing..
+		// It only needs to read at the read end
+		if (p2 == 0) {
+			close(pipefd[1]);
+			dup2(pipefd[0], STDIN_FILENO);
+			close(pipefd[0]);
+			if (execvp(parsedpipe[0], parsedpipe) < 0) {
+				printf("\nCould not execute command 2..");
+				exit(0);
+			}
+		} else {
+			// parent executing, waiting for two children
+			wait(NULL);
+			wait(NULL);
+		}
+	}
+}
+
+void execArgs(char** parsed)
+{
+	// Forking a child
+	pid_t pid = fork();
+
+	if (pid == -1) {
+		printf("\nFailed forking child..");
+		return;
+	} else if (pid == 0) {
+		if (execvp(parsed[0], parsed) < 0) {
+			printf("\nCould not execute command..");
+		}
+		exit(0);
+	} else {
+		// waiting for child to terminate
+		wait(NULL);
+		return;
+	}
+}
+
+void openHelp()
+{
+	puts("\n***WELCOME TO MY SHELL HELP***"
+		"\nCopyright @ Suprotik Dey"
+		"\n-Use the shell at your own risk..."
+		"\nList of Commands supported:"
+		"\n>cd"
+		"\n>ls"
+		"\n>exit"
+		"\n>all other general commands available in UNIX shell"
+		"\n>pipe handling"
+		"\n>improper space handling");
+
+	return;
+}
+
+// Function to execute builtin commands
+int ownCmdHandler(char** parsed)
+{
+	int NoOfOwnCmds = 4, i, switchOwnArg = 0;
+	char* ListOfOwnCmds[NoOfOwnCmds];
+	char* username;
+
+	ListOfOwnCmds[0] = "exit";
+	ListOfOwnCmds[1] = "cd";
+	ListOfOwnCmds[2] = "help";
+	ListOfOwnCmds[3] = "hello";
+
+	for (i = 0; i < NoOfOwnCmds; i++) {
+		if (strcmp(parsed[0], ListOfOwnCmds[i]) == 0) {
+			switchOwnArg = i + 1;
+			break;
+		}
+	}
+
+	switch (switchOwnArg) {
+	case 1:
+		printf("\nGoodbye\n");
+		exit(0);
+	case 2:
+		chdir(parsed[1]);
+		return 1;
+	case 3:
+		openHelp();
+		return 1;
+	case 4:
+		username = getenv("USER");
+		printf("\nHello %s.\nMind that this is "
+			"not a place to play around."
+			"\nUse help to know more..\n",
+			username);
+		return 1;
+	default:
+		break;
+	}
+
+	return 0;
+}
